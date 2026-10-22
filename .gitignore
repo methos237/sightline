@@ -1,0 +1,44 @@
+# Local AI context
+CLAUDE.md
+.claude/
+.aidocs/
+.remember/
+supertool
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+spark-warehouse/
+metastore_db/
+derby.log
+mlruns/
+
+# dbt
+warehouse/target/
+warehouse/dbt_packages/
+warehouse/logs/
+
+# Airflow
+airflow/logs/
+
+# Node (dashboard)
+node_modules/
+dashboard/dist/
+dashboard/.angular/
+dashboard/cypress/screenshots/
+dashboard/cypress/videos/
+coverage/
