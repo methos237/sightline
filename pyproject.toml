@@ -1,0 +1,38 @@
+[project]
+name = "sightline"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "clickhouse-connect>=1.11.0",
+    "confluent-kafka>=2.16.0",
+    "dbt-clickhouse>=1.10.3",
+    "dbt-core>=1.12.6",
+    "delta-spark==4.4.1",
+    "pyspark==4.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.0",
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["delta.*", "confluent_kafka.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["pipeline/tests"]
+addopts = "-q"
