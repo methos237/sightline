@@ -1,15 +1,13 @@
-.PHONY: up down dev test lint
+.PHONY: up down test lint
 
-# Spark driver needs Java 21. CI sets JAVA_HOME; on a Mac with `brew install openjdk@21` this does.
-export JAVA_HOME ?= /opt/homebrew/opt/openjdk@21
+# Spark driver needs Java 21. CI sets JAVA_HOME; locally Homebrew's openjdk@21 is the default.
+export JAVA_HOME ?= $(shell brew --prefix openjdk@21 2>/dev/null)
 
 up:
 	docker compose up -d --wait
 
 down:
 	docker compose down
-
-dev: up
 
 test:
 	uv run pytest
