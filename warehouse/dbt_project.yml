@@ -1,0 +1,16 @@
+name: sightline
+version: "1.0.0"
+profile: sightline
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+target-path: target
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  sightline:
+    staging:
+      +materialized: view
