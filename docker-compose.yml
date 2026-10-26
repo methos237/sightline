@@ -91,7 +91,7 @@ services:
 
   # Orchestration: `docker compose --profile orchestrate up -d`; UI on 8082, no login.
   airflow-db:
-    image: postgres:17
+    image: postgres:18
     profiles: ["orchestrate"]
     environment:
       POSTGRES_DB: airflow
