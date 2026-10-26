@@ -1,0 +1,25 @@
+name: warehouse
+
+on:
+  push:
+    branches: [master]
+    paths: ["warehouse/**", "docker/clickhouse/**", "docker-compose.yml", "pyproject.toml", "uv.lock", ".github/workflows/warehouse.yml"]
+  # No paths filter on pull_request: every job here is a required check on the master
+  # ruleset, and a required check that never runs blocks the merge.
+  pull_request:
+
+jobs:
+  warehouse:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: warehouse
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - run: docker compose up -d --wait clickhouse
+        working-directory: .
+      - run: uv run dbt build

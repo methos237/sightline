@@ -1,26 +1,38 @@
 # Sightline
 
-Event analytics warehouse with an Angular dashboard: product and ad events stream through Kafka, land as Delta tables on MinIO by Spark Structured Streaming, are shaped into silver tables by Spark batch jobs, served from ClickHouse, modeled and tested with dbt, orchestrated by Airflow with a data-quality gate and clean backfills, and read by an Angular dashboard. A scikit-learn model trained from the warehouse, tracked in MLflow and exported to ONNX, is handed to the companion project Gatekeeper, and a weekly drift check watches its features.
+Event analytics warehouse with an Angular dashboard: product and ad events stream through Kafka, land as Delta tables on RustFS by Spark Structured Streaming, are shaped into silver tables by Spark batch jobs, served from ClickHouse, modeled and tested with dbt, orchestrated by Airflow with a data-quality gate and clean backfills, and read by an Angular dashboard. A scikit-learn model trained from the warehouse, tracked in MLflow and exported to ONNX, is handed to the companion project Gatekeeper, and a weekly drift check watches its features.
 
 Every event is synthetic and seeded, so every number in this README is reproducible from one command. Every pipeline step is idempotent, so a day can be rerun or backfilled without duplicating a row. Everything runs in Docker Compose with no cloud account and no card on file; one Spark job is mirrored in Databricks Free Edition so the word is backed by a run.
 
-**Status.** Design complete, build not started. This README describes the target system; the phase list at the end records what has landed.
+**Status.** Phase 0 has landed: the compose stack, the Python project with a Spark test, the dbt project and CI. This README describes the target system; the phase list at the end records what has landed, and "Running today" lists what works now.
 
 ## Ten-minute tour
 
 The intended path once Phase 6 lands:
 
 ```bash
-docker compose up -d --wait                      # Redpanda 19092 + registry 18081, MinIO 9002, ClickHouse 8123, Jaeger, Grafana 3001
+docker compose up -d --wait                      # Redpanda 19092 + registry 18081, RustFS 9002, ClickHouse 8123, Jaeger 16689, Grafana 3001
 scripts/register-schemas.sh                      # seven JSON Schemas, BACKWARD compatibility
 uv run python -m pipeline.produce --days 3 --rate 2000 --seed 42   # diurnal traffic, heavy sites, three planted anomalies
-docker compose logs -f spark-stream | grep landed # bronze Delta partitions appear on MinIO
+docker compose logs -f spark-stream | grep landed # bronze Delta partitions appear on RustFS
 docker compose --profile orchestrate up -d       # Airflow 8082
 airflow dags backfill sightline_daily -s 2026-11-01 -e 2026-11-03
-clickhouse-client -q "SELECT event_date, sum(revenue) FROM marts.agg_daily_site GROUP BY 1 ORDER BY 1"
+clickhouse client --port 9009 --user sightline --password sightline -q "SELECT event_date, sum(revenue) FROM marts.agg_daily_site GROUP BY 1 ORDER BY 1"
 cd warehouse && dbt test                         # the contract between layers
 open http://localhost:4200                       # Angular dashboard: revenue, funnel, sites, anomalies, pipeline health
 open http://localhost:5001                       # MLflow: gatekeeper-risk runs, metrics, the registered model
+```
+
+### Running today
+
+```bash
+docker compose up -d --wait                      # Redpanda, RustFS with the lake bucket, ClickHouse with silver/marts/ops, Jaeger, Grafana
+docker compose --profile orchestrate up -d       # Airflow 3.3 on 8082, no login
+make test                                        # uv run pytest: Delta round trip on a local[2] SparkSession
+make lint                                        # ruff format --check, ruff check, mypy --strict pipeline
+cd warehouse && uv run dbt build                 # staging view plus not_null and unique tests against ClickHouse
+rpk -X brokers=localhost:19092 cluster info
+clickhouse client --port 9009 --user sightline --password sightline -q "SHOW DATABASES"
 ```
 
 ## Architecture
@@ -30,7 +42,7 @@ pipeline.produce (seeded synthetic events, OpenRTB-shaped bids) ──► Redpan
                                                                          │
                                             Spark Structured Streaming (land_bronze, checkpoints, idempotent MERGE)
                                                                          ▼
-MinIO  s3a://lake/  bronze/<event>/event_date=…  (Delta)   ──► build_silver (Spark batch, replaceWhere) ──► silver/ (Delta)
+RustFS  s3a://lake/  bronze/<event>/event_date=…  (Delta)   ──► build_silver (Spark batch, replaceWhere) ──► silver/ (Delta)
                                                                          │
                                                        load_clickhouse (INSERT … SELECT FROM s3/delta)
                                                                          ▼
@@ -54,9 +66,9 @@ MinIO  s3a://lake/  bronze/<event>/event_date=…  (Delta)   ──► build_sil
 
 ## Stack
 
-Python 3.13 · PySpark · Spark Structured Streaming · Delta Lake · Parquet · Redpanda (Kafka API, schema registry) · MinIO (S3 API) · ClickHouse · dbt Core · Apache Airflow 3 · FastAPI · scikit-learn · MLflow · ONNX · Scrapy · Angular · TypeScript · Angular Material · Sass · ECharts · Cypress · Lighthouse CI · Databricks Free Edition · Grafana · OpenTelemetry · GitHub Actions
+Python 3.13 · PySpark · Spark Structured Streaming · Delta Lake · Parquet · Redpanda (Kafka API, schema registry) · RustFS (S3 API) · ClickHouse · dbt Core · Apache Airflow 3 · FastAPI · scikit-learn · MLflow · ONNX · Scrapy · Angular · TypeScript · Angular Material · Sass · ECharts · Cypress · Lighthouse CI · Databricks Free Edition · Grafana · OpenTelemetry · GitHub Actions
 
-Prerequisites: Docker with Compose v2, uv, Java 21 (Spark driver), Node 26. Exact versions are pinned when Phase 0 lands.
+Prerequisites: Docker 29 with Compose v5, uv 0.12 (Python 3.13), Java 21 (OpenJDK, for the Spark driver), Node 26 from Phase 4. Pinned in compose and `uv.lock`: PySpark 4.2.0, delta-spark 4.4.1, dbt-core 1.12 with dbt-clickhouse 1.10, Redpanda v26.2.6, RustFS 1.0.4, ClickHouse 26.9, Airflow 3.3.2, Jaeger 2.22, Grafana 13.2.
 
 ## Events and ingestion
 
@@ -64,7 +76,7 @@ Seven event types with JSON Schemas registered in Redpanda's schema registry und
 
 `pipeline.produce` is a seeded generator with a realistic shape: a diurnal curve, a few heavy sites, a long tail of users, and three planted anomalies the dashboard and the model are expected to find (a bot ASN, a price spike on one site, a conversion fraud ring). Fixed seed, fixed output.
 
-**Bronze.** `land_bronze` is a Spark Structured Streaming job reading every topic, validating each record against its schema, and writing Delta tables partitioned by `event_date` to `s3a://lake/bronze/<event>` on MinIO. Checkpoints live on MinIO; each micro-batch is written idempotently (a `MERGE` on event id, or Delta's transactional idempotent writes; the choice is recorded in the roadmap when made), so a job restart mid-stream replays without a duplicate. Records that fail validation land in `bronze/_rejected` with the error, never silently dropped. The test for this is the one that matters: produce a day, kill the job in the middle, restart, count.
+**Bronze.** `land_bronze` is a Spark Structured Streaming job reading every topic, validating each record against its schema, and writing Delta tables partitioned by `event_date` to `s3a://lake/bronze/<event>` on RustFS. Checkpoints live on RustFS; each micro-batch is written idempotently (a `MERGE` on event id, or Delta's transactional idempotent writes; the choice is recorded in the roadmap when made), so a job restart mid-stream replays without a duplicate. Records that fail validation land in `bronze/_rejected` with the error, never silently dropped. The test for this is the one that matters: produce a day, kill the job in the middle, restart, count.
 
 ## Warehouse
 
@@ -86,7 +98,7 @@ The dashboard is Angular with standalone components and signals, Angular Materia
 
 ## Machine learning
 
-Features are extracted from silver by `pipeline/features.py` according to `docs/FEATURES.md`, the same specification Gatekeeper implements in TypeScript; a shared JSON fixture asserts both produce the same vector for the same event. Labels come from the planted abuse patterns. The model is a scikit-learn `LogisticRegression` in a `Pipeline` with scaling and balanced class weights, evaluated on ROC AUC, precision at the operating threshold and calibration, with every run tracked in MLflow (SQLite backend, MinIO artifacts) and the best run registered as `gatekeeper-risk`. `skl2onnx` exports it, a test asserts the ONNX output matches scikit-learn within 1e-6, and `scripts/handoff-model.sh` copies the file and its model card into Gatekeeper. Each week the DAG computes the population stability index per feature against the training distribution and writes it to `ops.model_drift`; the dashboard shows it.
+Features are extracted from silver by `pipeline/features.py` according to `docs/FEATURES.md`, the same specification Gatekeeper implements in TypeScript; a shared JSON fixture asserts both produce the same vector for the same event. Labels come from the planted abuse patterns. The model is a scikit-learn `LogisticRegression` in a `Pipeline` with scaling and balanced class weights, evaluated on ROC AUC, precision at the operating threshold and calibration, with every run tracked in MLflow (SQLite backend, RustFS artifacts) and the best run registered as `gatekeeper-risk`. `skl2onnx` exports it, a test asserts the ONNX output matches scikit-learn within 1e-6, and `scripts/handoff-model.sh` copies the file and its model card into Gatekeeper. Each week the DAG computes the population stability index per feature against the training distribution and writes it to `ops.model_drift`; the dashboard shows it.
 
 Logistic regression is the right size for this problem: synthetic labels, a dozen features, a consumer that needs a score in a few milliseconds from Node. A gradient-boosted model would score higher on the synthetic data and prove nothing more.
 
@@ -97,7 +109,8 @@ Logistic regression is the right size for this problem: synthetic labels, a doze
 ## Design decisions
 
 - **Spark Structured Streaming for landing, not Kafka Connect.** The streaming job validates, routes rejects and writes idempotently with one engine that also runs the batch layer. Connect is a stretch item with a written comparison.
-- **Delta on MinIO as the lake, ClickHouse as the warehouse.** Delta gives transactional, idempotent partition replacement for the pipeline; ClickHouse gives sub-second aggregates for the dashboard. One system for both would do one job badly.
+- **RustFS, not MinIO.** MinIO withdrew its free container images in September 2026. RustFS speaks the same S3 API on the same ports, so Spark still writes to `s3a://lake/` and nothing downstream knows the difference.
+- **Delta on RustFS as the lake, ClickHouse as the warehouse.** Delta gives transactional, idempotent partition replacement for the pipeline; ClickHouse gives sub-second aggregates for the dashboard. One system for both would do one job badly.
 - **Gold in dbt, not in Spark.** Marts are SQL with tests and docs that an analyst can read and change; keeping them in dbt makes the warehouse the contract and Spark the plumbing.
 - **Idempotency by replacement.** `MERGE` into bronze, `replaceWhere` for silver, drop-and-reload for ClickHouse partitions. Backfill is then just rerunning, and the test suite proves it.
 - **dbt tests as the quality gate.** The DAG stops on a failed test and marks the day. Great Expectations was considered and set aside; the dbt tests plus a small custom check say the same thing with less machinery.
@@ -124,7 +137,7 @@ Planned, enforced in CI from Phase 0:
 
 Each phase is a branch merged by pull request and tracked as a GitHub issue.
 
-- [ ] 0 Skeleton, compose, CI
+- [x] 0 Skeleton, compose, CI
 - [ ] 1 Event contracts, producer, Spark streaming to bronze Delta
 - [ ] 2 Silver and gold: Spark batch, ClickHouse serving tables, dbt models and tests
 - [ ] 3 Airflow: DAG, sensors, data-quality gate, backfill

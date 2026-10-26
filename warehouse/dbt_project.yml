@@ -1,0 +1,7 @@
+name: sightline
+profile: sightline
+
+models:
+  sightline:
+    staging:
+      +materialized: view
