@@ -59,7 +59,7 @@ services:
   # The warehouse the dashboard reads. HTTP 8123, native 9009. The image only lets a
   # user declared through these envs connect from outside the container.
   clickhouse:
-    image: clickhouse/clickhouse-server:26.9
+    image: clickhouse/clickhouse-server:26.10
     environment:
       CLICKHOUSE_USER: sightline
       CLICKHOUSE_PASSWORD: sightline
