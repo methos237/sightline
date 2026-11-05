@@ -59,7 +59,7 @@ services:
   # The warehouse the dashboard reads. HTTP 8123, native 9009. The image only lets a
   # user declared through these envs connect from outside the container.
   clickhouse:
-    image: clickhouse/clickhouse-server:26.9
+    image: clickhouse/clickhouse-server:26.10
     environment:
       CLICKHOUSE_USER: sightline
       CLICKHOUSE_PASSWORD: sightline
@@ -82,7 +82,7 @@ services:
 
   # Pipeline metrics only; the product dashboard is Angular. Anonymous admin, no login.
   grafana:
-    image: grafana/grafana:13.2.4
+    image: grafana/grafana:13.3.0
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
