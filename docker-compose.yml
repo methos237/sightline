@@ -20,7 +20,7 @@ services:
       retries: 20
 
   redpanda-console:
-    image: redpandadata/console:v3.13.1
+    image: redpandadata/console:v3.14.0
     depends_on:
       redpanda: { condition: service_healthy }
     environment:
@@ -59,7 +59,7 @@ services:
   # The warehouse the dashboard reads. HTTP 8123, native 9009. The image only lets a
   # user declared through these envs connect from outside the container.
   clickhouse:
-    image: clickhouse/clickhouse-server:26.9
+    image: clickhouse/clickhouse-server:26.10
     environment:
       CLICKHOUSE_USER: sightline
       CLICKHOUSE_PASSWORD: sightline
@@ -77,12 +77,12 @@ services:
 
   # Traces. UI on 16689, OTLP/HTTP in on 4319.
   jaeger:
-    image: jaegertracing/jaeger:2.22.0
+    image: jaegertracing/jaeger:2.23.0
     ports: ["16689:16686", "4319:4318"]
 
   # Pipeline metrics only; the product dashboard is Angular. Anonymous admin, no login.
   grafana:
-    image: grafana/grafana:13.2.4
+    image: grafana/grafana:13.3.0
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
@@ -107,7 +107,7 @@ services:
   # `airflow standalone` migrates the metadata DB and runs api-server, scheduler,
   # dag-processor and triggerer in one container; enough for a single-node demo.
   airflow:
-    image: apache/airflow:3.3.2
+    image: apache/airflow:3.4.0
     profiles: ["orchestrate"]
     command: ["standalone"]
     depends_on:
