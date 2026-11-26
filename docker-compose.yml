@@ -1,7 +1,7 @@
 services:
   # Kafka API on 19092, schema registry on 18081. Single node, dev-container mode.
   redpanda:
-    image: redpandadata/redpanda:v26.2.7
+    image: redpandadata/redpanda:v26.3.1
     command:
       - redpanda start
       - --mode dev-container
@@ -20,7 +20,7 @@ services:
       retries: 20
 
   redpanda-console:
-    image: redpandadata/console:v3.14.0
+    image: redpandadata/console:v3.15.0
     depends_on:
       redpanda: { condition: service_healthy }
     environment:
